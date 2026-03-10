@@ -1,28 +1,35 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
-const fs = require('fs'); // To save data to a file
+const fs = require('fs');
 const app = express();
 const path = require('path');
 
 const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent
+    ] 
 });
 
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = './data.json';
+const ALLOWED_CHANNEL_ID = '1480531258516963519'; // Your specific channel ID
 
-// --- DATA PERSISTENCE LOGIC ---
+// --- DATA PERSISTENCE ---
 let db = { stock: [], blacklist: [], claimHistory: [] };
 
-// Load data from file if it exists
 if (fs.existsSync(DATA_FILE)) {
-    db = JSON.parse(fs.readFileSync(DATA_FILE));
+    try {
+        db = JSON.parse(fs.readFileSync(DATA_FILE));
+    } catch (e) {
+        console.log("Error reading data file, starting fresh.");
+    }
 }
 
-// Function to save data whenever it changes
 const saveData = () => fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
 
-// --- WEBSITE LOGIC ---
+// --- WEBSITE API ---
 app.use(express.static('public'));
 app.use(express.json());
 
@@ -52,34 +59,49 @@ app.post('/api/blacklist', (req, res) => {
 
 // --- DISCORD BOT LOGIC ---
 client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.content.startsWith('?gen')) return;
+    // 1. Ignore bots
+    if (message.author.bot) return;
 
-    if (db.blacklist.includes(message.author.id)) {
-        return message.reply("❌ You are blacklisted.");
-    }
+    // 2. ONLY respond in your specific channel
+    if (message.channel.id !== ALLOWED_CHANNEL_ID) return;
 
-    if (db.stock.length === 0) {
-        return message.reply("⚠️ Out of stock!");
-    }
-
-    const account = db.stock.shift(); 
-    try {
-        await message.author.send(`🎁 **Your Account:** \`${account}\``);
-        message.reply("✅ Sent to your DMs!");
+    // 3. Command check
+    if (message.content.toLowerCase().startsWith('?gen')) {
         
-        db.claimHistory.unshift({ 
-            user: message.author.username, 
-            time: new Date().toLocaleTimeString() 
-        });
-        saveData();
-    } catch (err) {
-        message.reply("❌ DMs closed!");
-        db.stock.push(account); 
-        saveData();
+        // Check Blacklist
+        if (db.blacklist.includes(message.author.id)) {
+            return message.reply("❌ You are blacklisted from using this bot.");
+        }
+
+        // Check Stock
+        if (db.stock.length === 0) {
+            return message.reply("⚠️ We are currently out of stock!");
+        }
+
+        // Process Claim
+        const account = db.stock.shift(); 
+        try {
+            await message.author.send(`🎁 **Your Account Details:**\n\`${account}\``);
+            message.reply(`✅ Sent! Check your DMs, ${message.author.username}.`);
+            
+            // Log to dashboard
+            db.claimHistory.unshift({ 
+                user: message.author.username, 
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            });
+            // Keep history list short (last 20 claims)
+            if (db.claimHistory.length > 20) db.claimHistory.pop();
+            
+            saveData();
+        } catch (err) {
+            message.reply("❌ I couldn't DM you! Please open your privacy settings.");
+            db.stock.unshift(account); // Put it back at the front of the list
+            saveData();
+        }
     }
 });
 
-app.listen(PORT, () => console.log(`Dashboard live on port ${PORT}`));
+app.listen(PORT, () => console.log(`Dashboard running on port ${PORT}`));
 
-// This line pulls the token from Railway's "Variables" tab
+// Ensure you set 'TOKEN' in Railway Variables!
 client.login(process.env.TOKEN);
