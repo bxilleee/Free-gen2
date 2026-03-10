@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Bot Stock Dashboard</title>
+    <style>
+        :root {
+            --bg: #09090b;
+            --card: #18181b;
+            --primary: #8b5cf6;
+            --danger: #ef4444;
+            --accent: #22c55e;
+            --border: #27272a;
+            --text: #fafafa;
+            --text-dim: #a1a1aa;
+        }
+
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+        }
+        
+        body { 
+            background: var(--bg); 
+            color: var(--text); 
+            /* iPhone 15 Pro Max Safe Area Padding */
+            padding: env(safe-area-inset-top) 15px env(safe-area-inset-bottom);
+            line-height: 1.5;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 0 10px 0;
+        }
+
+        h1 { font-size: 26px; font-weight: 800; letter-spacing: -1px; }
+        p.subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 20px; }
+
+        .section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        h2 { 
+            font-size: 14px; 
+            color: var(--text-dim); 
+            margin-bottom: 15px; 
+            text-transform: uppercase; 
+            letter-spacing: 1.5px; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .count-badge {
+            background: var(--primary);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        /* Form Elements */
+        textarea {
+            width: 100%;
+            height: 140px;
+            background: #000000;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            color: white;
+            padding: 15px;
+            font-size: 16px; /* Prevents iOS auto-zoom */
+            margin-bottom: 12px;
+            resize: none;
+            outline: none;
+        }
+
+        textarea:focus { border-color: var(--primary); }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        input {
+            flex: 1;
+            background: #000000;
+            border: 1px solid var(--border);
+            padding: 14px;
+            border-radius: 14px;
+            color: white;
+            font-size: 16px;
+            outline: none;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px 20px;
+            border-radius: 14px;
+            font-weight: 700;
+            font-size: 15px;
+            transition: transform 0.1s;
+            cursor: pointer;
+        }
+
+        button:active { transform: scale(0.97); opacity: 0.9; }
+        .btn-red { background: var(--danger); }
+
+        /* Lists */
+        .list-container {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .item:last-child { border: 0; }
+
+        .item-info p { font-size: 15px; font-weight: 600; }
+        .item-info span { font-size: 12px; color: var(--text-dim); }
+
+        .status-tag {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        /* Custom Scrollbar for mobile */
+        ::-webkit-scrollbar { width: 0px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Management</h1>
+        <p class="subtitle">iPhone 15 Pro Max Optimized</p>
+    </header>
+
+    <div class="section">
+        <h2>Stock Manager <span class="count-badge" id="stockBadge">Loading...</span></h2>
+        <textarea id="stockInput" placeholder="Paste accounts here...&#10;Format: user:pass (one per line)"></textarea>
+        <button style="width: 100%;" onclick="addStock()">Import Accounts</button>
+    </div>
+
+    <div class="section">
+        <h2>Blacklist User</h2>
+        <div class="input-row">
+            <input type="number" id="blId" placeholder="Discord User ID">
+            <button class="btn-red" onclick="addBL()">Restrict</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Claim History</h2>
+        <div class="list-container" id="historyList">
+            <p style="text-align: center; color: var(--text-dim); padding: 20px;">No claims recorded yet.</p>
+        </div>
+    </div>
+
+    <script>
+        // Refresh everything when the page loads
+        async function loadData() {
+            try {
+                const response = await fetch('/api/data');
+                const data = await response.json();
+                
+                // Update Badge
+                document.getElementById('stockBadge').innerText = `${data.stockCount} Available`;
+                
+                // Update History
+                const historyList = document.getElementById('historyList');
+                if (data.claimHistory.length > 0) {
+                    historyList.innerHTML = '';
+                    data.claimHistory.forEach(log => {
+                        const item = document.createElement('div');
+                        item.className = 'item';
+                        item.innerHTML = `
+                            <div class="item-info">
+                                <p>@${log.user}</p>
+                                <span>${log.time}</span>
+                            </div>
+                            <span class="status-tag">SENT ✅</span>
+                        `;
+                        historyList.appendChild(item);
+                    });
+                }
+            } catch (err) {
+                console.error("Dashboard failed to sync:", err);
+            }
+        }
+
+        async function addStock() {
+            const input = document.getElementById('stockInput');
+            if (!input.value.trim()) return;
+
+            const res = await fetch('/api/add-stock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: input.value.trim() })
+            });
+
+            if (res.ok) {
+                input.value = '';
+                alert('Stock updated successfully!');
+                loadData();
+            }
+        }
+
+        async function addBL() {
+            const idInput = document.getElementById('blId');
+            if (!idInput.value) return;
+
+            const res = await fetch('/api/blacklist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: idInput.value })
+            });
+
+            if (res.ok) {
+                alert('User blacklisted.');
+                idInput.value = '';
+                loadData();
+            }
+        }
+
+        // Auto-refresh every 15 seconds to keep stats live
+        loadData();
+        setInterval(loadData, 15000);
+    </script>
+</body>
+</html>
